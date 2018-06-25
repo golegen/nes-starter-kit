@@ -22,6 +22,7 @@ ZEROPAGE_DEF(int, playerYVelocity);
 ZEROPAGE_DEF(unsigned char, playerControlsLockTime);
 ZEROPAGE_DEF(unsigned char, playerInvulnerabilityTime);
 ZEROPAGE_DEF(unsigned char, playerDirection);
+ZEROPAGE_DEF(unsigned char, swordPosition);
 
 // Huge pile of temporary variables
 #define rawXPosition tempChar1
@@ -76,6 +77,30 @@ void update_player_sprite(void) {
         oam_spr(rawXPosition + NES_SPRITE_WIDTH, rawYPosition + NES_SPRITE_HEIGHT, rawTileId + 17, 0x00, PLAYER_SPRITE_INDEX+12);
     }
 
+    if (swordPosition) {
+        switch (playerDirection) {
+            case SPRITE_DIRECTION_RIGHT:
+                oam_spr(rawXPosition + swordPosition, rawYPosition + 6, PLAYER_SWORD_TILE_ID_H1, 0x00, PLAYER_WEAPON_OAM_LOCATION);
+                oam_spr(rawXPosition + swordPosition + NES_SPRITE_WIDTH, rawYPosition + 6, PLAYER_SWORD_TILE_ID_H2, 0x00, PLAYER_WEAPON_OAM_LOCATION + 0x04);
+                break;
+            case SPRITE_DIRECTION_LEFT:
+                oam_spr(rawXPosition - swordPosition, rawYPosition + 6, PLAYER_SWORD_TILE_ID_H2, OAM_FLIP_H, PLAYER_WEAPON_OAM_LOCATION);
+                oam_spr(rawXPosition - swordPosition + NES_SPRITE_WIDTH, rawYPosition + 6, PLAYER_SWORD_TILE_ID_H1, OAM_FLIP_H, PLAYER_WEAPON_OAM_LOCATION + 0x04);
+                break;
+            case SPRITE_DIRECTION_DOWN:
+                oam_spr(rawXPosition + 2, rawYPosition + swordPosition, PLAYER_SWORD_TILE_ID_V1, OAM_FLIP_V, PLAYER_WEAPON_OAM_LOCATION);
+                oam_spr(rawXPosition + 2, rawYPosition + swordPosition + NES_SPRITE_WIDTH, PLAYER_SWORD_TILE_ID_V2, OAM_FLIP_V, PLAYER_WEAPON_OAM_LOCATION + 0x04);
+                break;
+            case SPRITE_DIRECTION_UP:
+                oam_spr(rawXPosition + 6, rawYPosition - swordPosition + 2, PLAYER_SWORD_TILE_ID_V2, 0x00, PLAYER_WEAPON_OAM_LOCATION);
+                oam_spr(rawXPosition + 6, rawYPosition - swordPosition + 2 + NES_SPRITE_WIDTH, PLAYER_SWORD_TILE_ID_V1, 0x00, PLAYER_WEAPON_OAM_LOCATION + 0x04);
+                break;
+        }
+    } else {
+        oam_spr(SPRITE_OFFSCREEN, SPRITE_OFFSCREEN, PLAYER_SWORD_TILE_ID_H1, 0x00, PLAYER_WEAPON_OAM_LOCATION);
+        oam_spr(SPRITE_OFFSCREEN, SPRITE_OFFSCREEN, PLAYER_SWORD_TILE_ID_H2, 0x00, PLAYER_WEAPON_OAM_LOCATION + 0x04);
+    }
+
 }
 
 void handle_player_movement(void) {
@@ -94,6 +119,13 @@ void handle_player_movement(void) {
         // If your controls are locked, just tick down the timer until they stop being locked. Don't read player input.
         playerControlsLockTime--;
     } else {
+
+        if (swordPosition == 0 && controllerState & PAD_A && !(lastControllerState & PAD_A)) {
+            swordPosition = PLAYER_SWORD_POSITION_FULLY_EXTENDED;
+        } else if (swordPosition != 0) {
+            swordPosition -= 1;
+        }
+
         if (controllerState & PAD_RIGHT && playerXVelocity >= 0) {
             // If you're moving right, and you're not at max, speed up.
             if (playerXVelocity < maxVelocity) {
@@ -151,9 +183,9 @@ void handle_player_movement(void) {
 
     rawXPosition = (playerXPosition >> PLAYER_POSITION_SHIFT);
     rawYPosition = (playerYPosition >> PLAYER_POSITION_SHIFT);
-        if (rawXPosition > SCREEN_EDGE_RIGHT) {
+    if (rawXPosition > SCREEN_EDGE_RIGHT) {
         // We use sprite direction to determine which direction to scroll in, so be sure this is set properly.
-        if (playerInvulnerabilityTime) {
+        if (playerInvulnerabilityTime || swordPosition) {
             playerXPosition -= playerXVelocity;
             rawXPosition = (playerXPosition >> PLAYER_POSITION_SHIFT);
         } else {
@@ -162,7 +194,7 @@ void handle_player_movement(void) {
             playerOverworldPosition++;
         }
     } else if (rawXPosition < SCREEN_EDGE_LEFT) {
-        if (playerInvulnerabilityTime) {
+        if (playerInvulnerabilityTime || swordPosition) {
             playerXPosition -= playerXVelocity;
             rawXPosition = (playerXPosition >> PLAYER_POSITION_SHIFT);
         } else {
@@ -171,7 +203,7 @@ void handle_player_movement(void) {
             playerOverworldPosition--;
         }
     } else if (rawYPosition > SCREEN_EDGE_BOTTOM) {
-        if (playerInvulnerabilityTime) {
+        if (playerInvulnerabilityTime || swordPosition) {
             playerYPosition -= playerYVelocity;
             rawYPosition = (playerYPosition >> PLAYER_POSITION_SHIFT);
         } else {
@@ -180,7 +212,7 @@ void handle_player_movement(void) {
             playerOverworldPosition += 8;
         }
     } else if (rawYPosition < SCREEN_EDGE_TOP) {
-        if (playerInvulnerabilityTime) {
+        if (playerInvulnerabilityTime || swordPosition) {
             playerYPosition -= playerYVelocity;
             rawYPosition = (playerYPosition >> PLAYER_POSITION_SHIFT);
         } else {
@@ -226,7 +258,7 @@ void test_player_tile_collision(void) {
                 playerYVelocity = 0;
                 playerControlsLockTime = 0;
             }
-            if (!playerControlsLockTime) {
+            if (!playerControlsLockTime && !swordPosition) {
                 playerDirection = SPRITE_DIRECTION_UP;
             }
 		} else {
@@ -236,7 +268,7 @@ void test_player_tile_collision(void) {
                 playerControlsLockTime = 0;
 
 			}
-            if (!playerControlsLockTime) {
+            if (!playerControlsLockTime && !swordPosition) {
                 playerDirection = SPRITE_DIRECTION_DOWN;
             }
 		}
@@ -265,7 +297,7 @@ void test_player_tile_collision(void) {
                     playerControlsLockTime = 0;
 
                 }
-                if (!playerControlsLockTime) {
+                if (!playerControlsLockTime && !swordPosition) {
                     playerDirection = SPRITE_DIRECTION_LEFT;
                 }
             } else {
@@ -275,7 +307,7 @@ void test_player_tile_collision(void) {
                     playerControlsLockTime = 0;
 
                 }
-                if (!playerControlsLockTime) {
+                if (!playerControlsLockTime && !swordPosition) {
                     playerDirection = SPRITE_DIRECTION_RIGHT;
                 }
             }
